@@ -1,0 +1,174 @@
+version: '3.8'
+
+# wakaf.ai VPS Core — 2 vCPU / 8GB RAM / 100GB SSD
+# Tencent Cloud Jakarta — Ubuntu 24.04 LTS
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: wakaf-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wakaf}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wakaf123}
+      POSTGRES_DB: ${POSTGRES_DB:-wakaf_ai}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - wakaf-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1.5G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wakaf}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Odoo ERP — LSP BWI SS.001-002
+  odoo:
+    image: odoo:17
+    container_name: wakaf-odoo
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HOST: postgres
+      PORT: 5432
+      USER: ${POSTGRES_USER:-wakaf}
+      PASSWORD: ${POSTGRES_PASSWORD:-wakaf123}
+    volumes:
+      - odoo_data:/var/lib/odoo
+      - ./odoo/config:/etc/odoo
+      - ./odoo/addons:/mnt/extra-addons
+    ports:
+      - "8069:8069"
+    networks:
+      - wakaf-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1.5G
+
+  # N8N Workflow Automation — LSP BWI SS.001-010
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: wakaf-n8n
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-wakaf_ai}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-wakaf}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-wakaf123}
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-admin123}
+      # AI Gateway integration
+      AI_GATEWAY_URL: ${AI_GATEWAY_URL:-https://ai-gateway.wakaf.ai}
+      AI_GATEWAY_KEY: ${AI_GATEWAY_KEY:-}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      - "5678:5678"
+    networks:
+      - wakaf-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  # Hermes Core Agent — LSP BWI SS.001-010 Manager
+  hermes:
+    image: hermes-agent:latest
+    container_name: wakaf-hermes
+    restart: unless-stopped
+    environment:
+      - HERMES_PROFILE=wakaf
+      - HERMES_ROLE=core
+      - HERMES_NODE=vps-core
+      - LSP_BWI_SCHEMES=SS.001,SS.002,SS.003,SS.004,SS.005,SS.006,SS.007,SS.008,SS.009,SS.010
+      - AI_GATEWAY_URL=${AI_GATEWAY_URL:-https://ai-gateway.wakaf.ai}
+      - AI_GATEWAY_KEY=${AI_GATEWAY_KEY:-}
+      - QUEUE_URL=${QUEUE_URL:-https://queue.wakaf.ai}
+    volumes:
+      - hermes_data:/home/hermes/.hermes
+      - ./hermes/config:/home/hermes/.hermes/config
+    networks:
+      - wakaf-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 2G
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: wakaf-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_URL:-https://grafana.wakaf.ai}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3000:3000"
+    networks:
+      - wakaf-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 0.5G
+
+  # Prometheus (lightweight)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: wakaf-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - wakaf-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 0.5G
+
+volumes:
+  postgres_data:
+  odoo_data:
+  n8n_data:
+  hermes_data:
+  grafana_data:
+  prometheus_data:
+
+networks:
+  wakaf-network:
+    driver: bridge
