@@ -5,6 +5,11 @@ compatibility_date = "2024-06-19"
 [vars]
 ENVIRONMENT = "production"
 
+# Routing config
+# - wakaf.ai → Cloudflare Pages (homepage)
+# - api.wakaf.ai → VPS backend
+# - grafana.wakaf.ai → VPS monitoring
+
 [[kv_namespaces]]
 binding = "CACHE"
 id = "your-kv-namespace-id"
@@ -14,6 +19,7 @@ name = "RATE_LIMITER"
 class_name = "RateLimiter"
 
 # Secrets (set via wrangler secret put)
+# KIMI_API_KEY
 # OPENROUTER_API_KEY
 # ANTHROPIC_API_KEY
 # OPENAI_API_KEY

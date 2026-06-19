@@ -5,6 +5,7 @@ export interface Env {
   OPENROUTER_API_KEY: string;
   ANTHROPIC_API_KEY: string;
   OPENAI_API_KEY: string;
+  VPS_IP: string;
 }
 
 interface LLMRequest {
@@ -86,6 +87,24 @@ export default {
       return new Response('Rate limited', { status: 429 });
     }
 
+    // Route based on subdomain
+    const hostname = url.hostname;
+    
+    // wakaf.ai → Cloudflare Pages (homepage)
+    if (hostname === 'wakaf.ai' || hostname === 'www.wakaf.ai') {
+      return fetch(request);
+    }
+    
+    // api.wakaf.ai → VPS backend
+    if (hostname === 'api.wakaf.ai') {
+      return routeToVPS(request, env);
+    }
+    
+    // grafana.wakaf.ai → VPS monitoring
+    if (hostname === 'grafana.wakaf.ai') {
+      return routeToVPS(request, env, 3000);
+    }
+    
     // Parse request
     const body: LLMRequest = await request.json();
     
@@ -125,6 +144,21 @@ export default {
     );
   }
 };
+
+async function routeToVPS(request: Request, env: Env, port: number = 8080): Promise<Response> {
+  const vpsIP = env.VPS_IP || '100.101.211.85';
+  const targetUrl = new URL(request.url);
+  targetUrl.hostname = vpsIP;
+  targetUrl.port = port.toString();
+  
+  const modifiedRequest = new Request(targetUrl.toString(), {
+    method: request.method,
+    headers: request.headers,
+    body: request.body
+  });
+  
+  return fetch(modifiedRequest);
+}
 
 async function generateCacheKey(request: LLMRequest): Promise<string> {
   const keyData = JSON.stringify({
