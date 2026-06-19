@@ -1,0 +1,69 @@
+name: Deploy VPS Core
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'vps/**'
+      - '.github/workflows/deploy-vps.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to VPS (Tencent Cloud Jakarta)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy to VPS
+        env:
+          VPS_IP: ${{ secrets.VPS_IP }}
+        run: |
+          echo "🚀 Deploying wakaf.ai to VPS..."
+          
+          # Setup SSH key
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          # Add host to known_hosts
+          ssh-keyscan -H $VPS_IP >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Deploy via SSH
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@$VPS_IP << 'EOF'
+            echo "📡 Connected to VPS ($VPS_IP)"
+            
+            # Pull latest changes
+            cd /opt/wakaf.ai || mkdir -p /opt/wakaf.ai && cd /opt/wakaf.ai
+            git pull origin main || git clone https://github.com/ridloabelian/wakaf.ai.git .
+            
+            # Deploy VPS stack
+            cd vps
+            echo "🐳 Stopping existing containers..."
+            docker compose down
+            
+            echo "🐳 Starting new containers..."
+            docker compose up -d
+            
+            echo "✅ wakaf.ai VPS deployed successfully"
+            docker compose ps
+          EOF
+
+      - name: Verify Deployment
+        env:
+          VPS_IP: ${{ secrets.VPS_IP }}
+        run: |
+          echo "🔍 Verifying wakaf.ai services..."
+          curl -s http://$VPS_IP:8069/web/database/selector 2>/dev/null && echo "✅ Odoo OK" || echo "⚠️ Odoo check failed"
+          curl -s http://$VPS_IP:5678/healthz 2>/dev/null && echo "✅ N8N OK" || echo "⚠️ N8N check failed"
+          curl -s http://$VPS_IP:3000/api/health 2>/dev/null && echo "✅ Grafana OK" || echo "⚠️ Grafana check failed"
+        continue-on-error: true

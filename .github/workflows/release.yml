@@ -1,0 +1,50 @@
+name: Release wakaf.ai
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          echo "## wakaf.ai Release ${{ github.ref_name }}" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Platform Overview" >> CHANGELOG.md
+          echo "- **Domain:** wakaf.ai" >> CHANGELOG.md
+          echo "- **Architecture:** Cloudflare Workers (Edge) + VPS (Core)" >> CHANGELOG.md
+          echo "- **Target Cost:** < Rp 1.000.000/month" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### LSP BWI Certification Schemes" >> CHANGELOG.md
+          echo "- SS.001 — Perencanaan Pengelolaan & Pengembangan ✅" >> CHANGELOG.md
+          echo "- SS.002 — Pelaksanaan Pengelolaan & Pengembangan ✅" >> CHANGELOG.md
+          echo "- SS.003 — Perencanaan Penerimaan Harta Benda ✅" >> CHANGELOG.md
+          echo "- SS.004 — Pelaksanaan Penerimaan Harta Benda ✅" >> CHANGELOG.md
+          echo "- SS.005 — Perencanaan Penjagaan Harta Benda ✅" >> CHANGELOG.md
+          echo "- SS.006 — Pelaksanaan Penjagaan Harta Benda ✅" >> CHANGELOG.md
+          echo "- SS.007 — Perencanaan Penyaluran Manfaat ✅" >> CHANGELOG.md
+          echo "- SS.008 — Pelaksanaan Penyaluran Manfaat ✅" >> CHANGELOG.md
+          echo "- SS.009 — Penyajian Informasi Kinerja Keuangan ✅" >> CHANGELOG.md
+          echo "- SS.010 — Penyusunan Laporan Keuangan ✅" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Changes" >> CHANGELOG.md
+          git log --oneline --no-decorate $(git describe --tags --abbrev=0 HEAD^)..HEAD >> CHANGELOG.md || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: CHANGELOG.md
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

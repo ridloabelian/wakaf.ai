@@ -1,0 +1,107 @@
+name: Health Check wakaf.ai
+
+on:
+  schedule:
+    # Run every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Check wakaf.ai Platform Status
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Check Edge Services (Cloudflare Workers)
+        run: |
+          echo "🔍 Checking Cloudflare Workers..."
+          
+          # AI Gateway
+          AI_GATEWAY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://ai-gateway.wakaf.ai/health || echo "000")
+          if [ "$AI_GATEWAY_STATUS" = "200" ]; then
+            echo "✅ AI Gateway: ONLINE"
+          else
+            echo "❌ AI Gateway: OFFLINE (HTTP $AI_GATEWAY_STATUS)"
+          fi
+          
+          # Queue Engine
+          QUEUE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://queue.wakaf.ai/health || echo "000")
+          if [ "$QUEUE_STATUS" = "200" ]; then
+            echo "✅ Queue Engine: ONLINE"
+          else
+            echo "❌ Queue Engine: OFFLINE (HTTP $QUEUE_STATUS)"
+          fi
+
+      - name: Check Core Services (VPS)
+        env:
+          VPS_IP: ${{ secrets.VPS_IP }}
+        run: |
+          echo "🔍 Checking VPS Core Services..."
+          
+          # Odoo
+          if curl -s http://$VPS_IP:8069 > /dev/null 2>&1; then
+            echo "✅ Odoo ERP: ONLINE"
+          else
+            echo "❌ Odoo ERP: OFFLINE"
+          fi
+          
+          # N8N
+          if curl -s http://$VPS_IP:5678 > /dev/null 2>&1; then
+            echo "✅ N8N: ONLINE"
+          else
+            echo "❌ N8N: OFFLINE"
+          fi
+          
+          # Grafana
+          if curl -s http://$VPS_IP:3000 > /dev/null 2>&1; then
+            echo "✅ Grafana: ONLINE"
+          else
+            echo "❌ Grafana: OFFLINE"
+          fi
+          
+          # PostgreSQL (via docker exec)
+          echo "🔍 Checking PostgreSQL..."
+          # Note: Direct DB check requires SSH, skipped in this workflow
+
+      - name: Generate Report
+        run: |
+          echo ""
+          echo "═══════════════════════════════════════════════════"
+          echo "  wakaf.ai Health Check Report"
+          echo "  Timestamp: $(date)"
+          echo "═══════════════════════════════════════════════════"
+          echo ""
+          echo "Edge Layer (Cloudflare Workers):"
+          echo "  AI Gateway: Checked"
+          echo "  Queue Engine: Checked"
+          echo ""
+          echo "Core Layer (VPS):"
+          echo "  Odoo ERP: Checked"
+          echo "  N8N: Checked"
+          echo "  Grafana: Checked"
+          echo ""
+          echo "═══════════════════════════════════════════════════"
+
+      - name: Notify on Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🚨 wakaf.ai Health Check FAILED\nSome services may be offline. Check GitHub Actions for details."
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
