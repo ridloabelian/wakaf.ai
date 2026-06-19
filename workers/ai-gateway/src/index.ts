@@ -1,6 +1,7 @@
 export interface Env {
   CACHE: KVNamespace;
   RATE_LIMITER: DurableObjectNamespace;
+  KIMI_API_KEY: string;
   OPENROUTER_API_KEY: string;
   ANTHROPIC_API_KEY: string;
   OPENAI_API_KEY: string;
@@ -29,6 +30,11 @@ interface LLMResponse {
 
 // Provider configurations
 const PROVIDERS = {
+  kimi: {
+    url: 'https://api.kimi.com/code/v1/chat/completions',
+    authHeader: (key: string) => `Bearer ${key}`,
+    models: ['kimi-coding', 'kimi-chat']
+  },
   openrouter: {
     url: 'https://openrouter.ai/api/v1/chat/completions',
     authHeader: (key: string) => `Bearer ${key}`,
@@ -95,7 +101,7 @@ export default {
 
     // Try providers in order
     let lastError: Error | null = null;
-    const providers = ['openrouter', 'anthropic', 'openai'] as const;
+    const providers = ['kimi', 'openrouter', 'anthropic', 'openai'] as const;
     
     for (const providerName of providers) {
       try {
@@ -142,8 +148,11 @@ async function callProvider(
 ): Promise<LLMResponse> {
   const config = PROVIDERS[provider];
   
-  let apiKey: string;
+  let apiKey: string = '';
   switch (provider) {
+    case 'kimi':
+      apiKey = env.KIMI_API_KEY;
+      break;
     case 'openrouter':
       apiKey = env.OPENROUTER_API_KEY;
       break;
